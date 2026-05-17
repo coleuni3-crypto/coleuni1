@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+openai
+httpx
+redis
+celery
+python-dotenv
+pydantic
+psycopg2-binary
+PyPDF2
+bcrypt
+python-jose[cryptography]
+requests
