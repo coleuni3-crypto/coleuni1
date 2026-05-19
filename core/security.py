@@ -1,13 +1,27 @@
 import os
 import jwt
+
 from datetime import datetime, timedelta
-from fastapi import HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+from fastapi import (
+    HTTPException,
+    Depends,
+    status
+)
+
+from fastapi.security import (
+    HTTPBearer,
+    HTTPAuthorizationCredentials
+)
 
 # =====================================================
-# 🔐 CONFIG
+# 🔐 SECURITY CONFIG
 # =====================================================
 SECRET_KEY = os.getenv("SECRET_KEY")
+
+if not SECRET_KEY:
+    raise Exception("❌ SECRET_KEY missing in environment variables")
+
 ALGORITHM = "HS256"
 
 ACCESS_TOKEN_EXPIRE_DAYS = 7
@@ -16,12 +30,9 @@ security = HTTPBearer()
 
 
 # =====================================================
-# 🚀 CREATE TOKEN
+# 🚀 CREATE ACCESS TOKEN
 # =====================================================
 def create_access_token(data: dict):
-
-    if not SECRET_KEY:
-        raise Exception("SECRET_KEY missing")
 
     payload = data.copy()
 
@@ -31,20 +42,24 @@ def create_access_token(data: dict):
         "type": "access"
     })
 
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    token = jwt.encode(
+        payload,
+        SECRET_KEY,
+        algorithm=ALGORITHM
+    )
+
+    return token
 
 
 # =====================================================
-# 🔓 VERIFY TOKEN (CORE)
+# 🔓 VERIFY TOKEN
 # =====================================================
 def verify_token(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
 
-    if not SECRET_KEY:
-        raise Exception("SECRET_KEY not set")
-
     try:
+
         token = credentials.credentials
 
         payload = jwt.decode(
@@ -53,54 +68,108 @@ def verify_token(
             algorithms=[ALGORITHM]
         )
 
+        # verify token type
         if payload.get("type") != "access":
-            raise HTTPException(status_code=401, detail="Invalid token type")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type"
+            )
 
         return payload
 
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token expired"
+        )
 
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token"
+        )
+
+    except Exception as e:
+
+        print("[TOKEN ERROR]", e)
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed"
+        )
 
 
 # =====================================================
 # 👤 CURRENT USER
 # =====================================================
-def get_current_user(user: dict = Depends(verify_token)):
+def get_current_user(
+    user: dict = Depends(verify_token)
+):
     return user
 
 
 # =====================================================
-# 🔒 ROLE CHECK
+# 🔒 REQUIRE ROLE
 # =====================================================
-def require_role(role: str):
+def require_role(required_role: str):
 
-    def checker(user: dict = Depends(verify_token)):
+    def role_checker(
+        user: dict = Depends(verify_token)
+    ):
 
-        if user.get("role") != role:
+        user_role = user.get("role")
+
+        if user_role != required_role:
+
             raise HTTPException(
-                status_code=403,
-                detail=f"Forbidden: requires role {role}"
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied. Requires role: {required_role}"
             )
 
         return user
 
-    return checker
+    return role_checker
 
 
 # =====================================================
-# 🏫 INSTITUTION CHECK
+# 🏫 REQUIRE INSTITUTION
 # =====================================================
-def require_institution(user: dict = Depends(verify_token)):
+def require_institution(
+    user: dict = Depends(verify_token)
+):
 
     institution_id = user.get("institution_id")
 
     if not institution_id:
+
         raise HTTPException(
-            status_code=403,
-            detail="Missing institution context"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Institution access required"
         )
 
     return institution_id
+
+
+# =====================================================
+# 🧠 OPTIONAL MULTI-ROLE SUPPORT
+# =====================================================
+def require_any_role(allowed_roles: list):
+
+    def role_checker(
+        user: dict = Depends(verify_token)
+    ):
+
+        role = user.get("role")
+
+        if role not in allowed_roles:
+
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions"
+            )
+
+        return user
+
+    return role_checker

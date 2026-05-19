@@ -1,88 +1,156 @@
 import re
 import bcrypt
+
 from core.supabase_http import select, insert
 from auth.auth_utils import create_access_token
 
-
 # =====================================================
-# VALIDATION
+# 📧 EMAIL VALIDATION
 # =====================================================
 def is_valid_email(email: str):
-    return re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", email)
-
+    pattern = r"^[\w\.-]+@[\w\.-]+\.\w+$"
+    return re.match(pattern, email)
 
 # =====================================================
-# SIGNUP
+# 🔐 HASH PASSWORD
+# =====================================================
+def hash_password(password: str):
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+# =====================================================
+# 🔐 VERIFY PASSWORD
+# =====================================================
+def verify_password(plain: str, hashed: str):
+    try:
+        return bcrypt.checkpw(
+            plain.encode(),
+            hashed.encode()
+        )
+    except Exception:
+        return False
+
+# =====================================================
+# 🏫 GET OR CREATE INSTITUTION
+# =====================================================
+def get_or_create_institution(name: str):
+
+    institution = select(
+        "institutions",
+        {"name": name},
+        single=True
+    )
+
+    if institution:
+        return institution["id"]
+
+    new_inst = insert("institutions", {
+        "name": name
+    })
+
+    if not new_inst:
+        raise Exception("Failed to create institution")
+
+    return new_inst["id"]
+
+# =====================================================
+# 🧠 SIGNUP USER
 # =====================================================
 def signup_user(email: str, password: str, institution_name: str, role="student"):
 
     email = email.strip().lower()
 
+    # validation
     if not is_valid_email(email):
-        return {"error": "Invalid email"}
+        return {"error": "Invalid email format"}
 
     if len(password) < 6:
-        return {"error": "Password too short"}
+        return {"error": "Password must be at least 6 characters"}
 
-    # check user
-    if select("users", "*", {"email": email}, single=True):
-        return {"error": "User exists"}
+    # check existing user
+    existing = select("users", {"email": email}, single=True)
 
-    # institution
-    institution = select("institutions", "*", {"name": institution_name}, single=True)
+    if existing:
+        return {"error": "User already exists"}
 
-    if institution:
-        institution_id = institution["id"]
-    else:
-        institution_id = insert("institutions", {"name": institution_name})["id"]
+    try:
+        institution_id = get_or_create_institution(institution_name)
 
-    # hash password
-    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        # create user
+        user = insert("users", {
+            "email": email,
+            "password": hash_password(password),
+            "role": role,
+            "institution_id": institution_id
+        })
 
-    # create user
-    user = insert("users", {
-        "email": email,
-        "password_hash": password_hash,
-        "role": role,
-        "institution_id": institution_id
-    })
+        if not user:
+            return {"error": "Failed to create user"}
 
-    token = create_access_token({
-        "user_id": user["id"],
-        "email": user["email"],
-        "role": user["role"],
-        "institution_id": user["institution_id"]
-    })
+        token = create_access_token({
+            "user_id": user["id"],
+            "email": user["email"],
+            "role": user["role"],
+            "institution_id": user["institution_id"]
+        })
 
-    return {
-        "access_token": token,
-        "user": user
-    }
+        return {
+            "access_token": token,
+            "user": {
+                "id": user["id"],
+                "email": user["email"],
+                "role": user["role"],
+                "institution_id": user["institution_id"]
+            }
+        }
 
+    except Exception as e:
+        print("[SIGNUP ERROR]", e)
+
+        return {
+            "error": "Signup failed"
+        }
 
 # =====================================================
-# LOGIN
+# 🔐 LOGIN USER
 # =====================================================
 def login_user(email: str, password: str):
 
     email = email.strip().lower()
 
-    user = select("users", "*", {"email": email}, single=True)
+    try:
+        user = select("users", {"email": email}, single=True)
 
-    if not user:
-        return {"error": "Invalid credentials"}
+        if not user:
+            return {"error": "Invalid credentials"}
 
-    if not bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
-        return {"error": "Invalid credentials"}
+        stored_password = user.get("password")
 
-    token = create_access_token({
-        "user_id": user["id"],
-        "email": user["email"],
-        "role": user["role"],
-        "institution_id": user["institution_id"]
-    })
+        if not stored_password:
+            return {"error": "Account misconfigured"}
 
-    return {
-        "access_token": token,
-        "user": user
-    }
+        if not verify_password(password, stored_password):
+            return {"error": "Invalid credentials"}
+
+        token = create_access_token({
+            "user_id": user["id"],
+            "email": user["email"],
+            "role": user["role"],
+            "institution_id": user["institution_id"]
+        })
+
+        return {
+            "access_token": token,
+            "user": {
+                "id": user["id"],
+                "email": user["email"],
+                "role": user["role"],
+                "institution_id": user["institution_id"]
+            }
+        }
+
+    except Exception as e:
+        print("[LOGIN ERROR]", e)
+
+        return {
+            "error": "Login failed"
+        }
