@@ -1,4 +1,5 @@
 import os
+import logging
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -15,19 +16,26 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# ==============================
+# 🪵 LOGGING (PRODUCTION SAFE)
+# ==============================
+logging.basicConfig(level=logging.INFO)
+
 
 # ==============================
-# 🧠 SAFE RESPONSE WRAPPER
+# 🧠 SAFE RESPONSE PARSER
 # ==============================
 def safe_data(response):
     try:
-        return response.data if hasattr(response, "data") else response
+        if hasattr(response, "data"):
+            return response.data or []
+        return response or []
     except Exception:
         return []
 
 
 # ==============================
-# 📥 SELECT (SAFE + FILTERED)
+# 📥 SELECT (SAFE + FLEXIBLE)
 # ==============================
 def select(table: str, filters: dict = None, columns="*", single=False):
     try:
@@ -46,12 +54,12 @@ def select(table: str, filters: dict = None, columns="*", single=False):
         return data
 
     except Exception as e:
-        print(f"[SUPABASE SELECT ERROR] {table}: {e}")
-        return []
+        logging.error(f"[SUPABASE SELECT ERROR] {table}: {e}")
+        return [] if not single else None
 
 
 # ==============================
-# ➕ INSERT
+# ➕ INSERT (SAFE)
 # ==============================
 def insert(table: str, payload: dict):
     try:
@@ -60,41 +68,50 @@ def insert(table: str, payload: dict):
         return data[0] if data else None
 
     except Exception as e:
-        print(f"[SUPABASE INSERT ERROR] {table}: {e}")
+        logging.error(f"[SUPABASE INSERT ERROR] {table}: {e}")
         return None
 
 
 # ==============================
-# ✏️ UPDATE
+# ✏️ UPDATE (SAFE)
 # ==============================
 def update(table: str, payload: dict, filters: dict):
     try:
         query = supabase.table(table).update(payload)
 
-        for key, value in filters.items():
-            query = query.eq(key, value)
+        if filters:
+            for key, value in filters.items():
+                query = query.eq(key, value)
 
         res = query.execute()
         return safe_data(res)
 
     except Exception as e:
-        print(f"[SUPABASE UPDATE ERROR] {table}: {e}")
+        logging.error(f"[SUPABASE UPDATE ERROR] {table}: {e}")
         return []
 
 
 # ==============================
-# ❌ DELETE
+# ❌ DELETE (SAFE)
 # ==============================
 def delete(table: str, filters: dict):
     try:
         query = supabase.table(table).delete()
 
-        for key, value in filters.items():
-            query = query.eq(key, value)
+        if filters:
+            for key, value in filters.items():
+                query = query.eq(key, value)
 
         res = query.execute()
         return safe_data(res)
 
     except Exception as e:
-        print(f"[SUPABASE DELETE ERROR] {table}: {e}")
+        logging.error(f"[SUPABASE DELETE ERROR] {table}: {e}")
         return []
+
+
+# ==============================
+# 🔍 RAW ACCESS (ADVANCED USE ONLY)
+# ==============================
+def raw():
+    return supabase

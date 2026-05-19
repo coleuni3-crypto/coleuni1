@@ -1,44 +1,55 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
 # =====================================================
-# 📊 STUDENT PERFORMANCE MODEL
+# 📊 STUDENT PERFORMANCE MODEL (ADAPTIVE CORE)
 # =====================================================
 class StudentPerformance(BaseModel):
 
     student_id: str = Field(..., min_length=1)
     institution_id: str = Field(..., min_length=1)
+    material_id: Optional[str] = None
+
     topic: str = Field(..., min_length=1)
 
     score: float = Field(..., ge=0, le=100)
+    weak_topics: Optional[List[str]] = []
 
-    created_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 # =====================================================
-# 🧠 STUDENT MEMORY MODEL
+# 🧠 STUDENT MEMORY MODEL (PERSONALIZATION CORE)
 # =====================================================
 class StudentMemory(BaseModel):
 
     student_id: str = Field(..., min_length=1)
     institution_id: str = Field(..., min_length=1)
-    content: str = Field(..., min_length=1)
 
-    created_at: Optional[datetime] = None
+    content: str = Field(..., min_length=1)
+    learning_score: float = 0.0
+
+    last_query: Optional[str] = None
+    last_activity: Optional[datetime] = None
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 # =====================================================
-# 👤 USER MODEL (FOR FUTURE AUTH SYSTEM)
+# 👤 USER MODEL (AUTH SYSTEM READY)
 # =====================================================
 class User(BaseModel):
 
     id: Optional[str] = None
-    email: str
+    email: str = Field(..., min_length=3)
     password: Optional[str] = None   # hashed later
-    role: str = "student"
+
+    role: str = Field(default="student")
     institution_id: str
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 # =====================================================
@@ -47,5 +58,6 @@ class User(BaseModel):
 class Institution(BaseModel):
 
     id: Optional[str] = None
-    name: str
-    created_at: Optional[datetime] = None
+    name: str = Field(..., min_length=2)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)

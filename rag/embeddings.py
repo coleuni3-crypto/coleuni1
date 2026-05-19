@@ -1,23 +1,30 @@
 import os
-from openai import OpenAI
 import time
+import random
+import logging
+from openai import OpenAI
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# ==============================
+# 🪵 LOGGING
+# ==============================
+logger = logging.getLogger("coleuni.embeddings")
+
 
 # =====================================================
-# NORMALIZE TEXT (IMPORTANT FOR CONSISTENCY)
+# 🧼 NORMALIZE TEXT (CONSISTENCY LAYER)
 # =====================================================
 def _clean_text(text: str) -> str:
 
     if not text:
         return ""
 
-    return text.strip().replace("\n", " ")
+    return " ".join(text.strip().split())
 
 
 # =====================================================
-# EMBEDDING GENERATION (PRODUCTION SAFE)
+# 📊 EMBEDDING GENERATION (PRODUCTION SAFE V4)
 # =====================================================
 def get_embedding(text: str, retries: int = 3):
 
@@ -36,11 +43,20 @@ def get_embedding(text: str, retries: int = 3):
 
             embedding = response.data[0].embedding
 
-            # Optional normalization (helps cosine similarity stability)
+            if not embedding:
+                return None
+
             return embedding
 
         except Exception as e:
-            print(f"[EMBED ERROR] Attempt {attempt + 1}: {e}")
-            time.sleep(1)
 
+            wait_time = (2 ** attempt) + random.uniform(0, 0.5)
+
+            logger.warning(
+                f"[EMBEDDING ERROR] attempt={attempt+1} error={str(e)} retry_in={wait_time:.2f}s"
+            )
+
+            time.sleep(wait_time)
+
+    logger.error("[EMBEDDING FAILED] All retries exhausted")
     return None

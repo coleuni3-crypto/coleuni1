@@ -13,17 +13,14 @@ from services.study_autopilot import (
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-
-# =====================================================
-# 🧠 GLOBAL AI ENGINE CONFIG (V4)
-# =====================================================
 MODEL = "gpt-4o-mini"
 
 
 # =====================================================
-# 🔐 SAFE AI WRAPPER (PRODUCTION READY)
+# 🔐 SAFE OPENAI CALL (V4 PRODUCTION)
 # =====================================================
 def safe_openai_call(messages):
+
     try:
         response = client.chat.completions.create(
             model=MODEL,
@@ -33,25 +30,46 @@ def safe_openai_call(messages):
 
         content = response.choices[0].message.content
 
-        # try parse JSON (GLOBAL OS STANDARD)
+        # try strict JSON parse
         try:
-            return json.loads(content)
-        except:
+            data = json.loads(content)
+
+            if not isinstance(data, dict):
+                raise ValueError("Invalid JSON structure")
+
             return {
-                "answer": content,
-                "format": "raw_text_fallback"
+                "success": True,
+                "data": data,
+                "format": "json"
+            }
+
+        except Exception:
+            return {
+                "success": True,
+                "data": {
+                    "answer": content,
+                    "key_concepts": [],
+                    "difficulty": "medium",
+                    "student_feedback": {
+                        "understood": False,
+                        "confidence_score": 0
+                    },
+                    "next_lesson_suggestion": "",
+                    "revision_needed": []
+                },
+                "format": "fallback_text"
             }
 
     except Exception as e:
         return {
             "success": False,
             "error": str(e),
-            "fallback": True
+            "engine": "openai_failure"
         }
 
 
 # =====================================================
-# 🤖 V4 ADAPTIVE TUTOR ENGINE (GLOBAL OS CORE)
+# 🤖 ADAPTIVE CHAT ENGINE (CORE)
 # =====================================================
 async def chat(query: str, user: dict):
 
@@ -71,10 +89,10 @@ async def chat(query: str, user: dict):
     context = "\n".join([c.get("content", "") for c in context_data])
 
     # =========================
-    # 🌍 GLOBAL EDUCATION OS PROMPT
+    # 🌍 AI PROMPT
     # =========================
     prompt = f"""
-You are ColeUni Global Education OS (V4).
+You are ColeUni Adaptive Education OS V4.
 
 Return STRICT JSON ONLY:
 
@@ -83,20 +101,20 @@ Return STRICT JSON ONLY:
   "key_concepts": ["..."],
   "difficulty": "easy | medium | hard",
   "student_feedback": {{
-      "understood": true/false,
+      "understood": false,
       "confidence_score": 0-100
   }},
   "next_lesson_suggestion": "...",
-  "revision_needed": ["topics"]
+  "revision_needed": ["..."]
 }}
 
-STUDENT PROFILE:
+STUDENT MEMORY:
 {memory}
 
-WEAK AREAS:
+WEAK TOPICS:
 {weak_topics}
 
-RELEVANT CONTEXT:
+CONTEXT:
 {context}
 
 QUESTION:
@@ -104,18 +122,12 @@ QUESTION:
 """
 
     result = safe_openai_call([
-        {
-            "role": "system",
-            "content": "You are a global adaptive education AI engine."
-        },
-        {
-            "role": "user",
-            "content": prompt
-        }
+        {"role": "system", "content": "You are a strict AI tutor. Output ONLY JSON."},
+        {"role": "user", "content": prompt}
     ])
 
     # =========================
-    # 📊 LEARNING LOOP (V4 INTELLIGENCE FEEDBACK)
+    # 📊 LEARNING LOOP
     # =========================
     loop_result = process_learning_event(
         student_id=student_id,
@@ -126,14 +138,14 @@ QUESTION:
 
     return {
         "success": True,
-        "data": result,
-        "learning_loop": loop_result,
-        "engine": "coleuni-v4-global-os"
+        "engine": "coleuni-v4-adaptive",
+        "response": result,
+        "learning_loop": loop_result
     }
 
 
 # =====================================================
-# 📊 EXAM PREDICTION ENGINE (GLOBAL RISK AI)
+# 📊 EXAM PREDICTION ENGINE
 # =====================================================
 async def exam_predict(topics: list, user: dict):
 
@@ -149,14 +161,11 @@ async def exam_predict(topics: list, user: dict):
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
 
 
 # =====================================================
-# 📅 STUDY PLAN ENGINE (ADAPTIVE SCHEDULER V4)
+# 📅 STUDY PLAN ENGINE
 # =====================================================
 async def study_plan(topics: list, user: dict):
 
@@ -172,14 +181,11 @@ async def study_plan(topics: list, user: dict):
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
 
 
 # =====================================================
-# 🗓 DAILY LEARNING SCHEDULE ENGINE
+# 🗓 DAILY SCHEDULE ENGINE
 # =====================================================
 async def daily_schedule(topics: list, user: dict):
 
@@ -195,7 +201,4 @@ async def daily_schedule(topics: list, user: dict):
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}

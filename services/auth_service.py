@@ -12,13 +12,16 @@ def is_valid_email(email: str):
     return re.match(pattern, email)
 
 # =====================================================
-# 🔐 HASH PASSWORD
+# 🔐 PASSWORD HASHING
 # =====================================================
 def hash_password(password: str):
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw(
+        password.encode(),
+        bcrypt.gensalt()
+    ).decode()
 
 # =====================================================
-# 🔐 VERIFY PASSWORD
+# 🔐 PASSWORD VERIFY
 # =====================================================
 def verify_password(plain: str, hashed: str):
     try:
@@ -30,7 +33,7 @@ def verify_password(plain: str, hashed: str):
         return False
 
 # =====================================================
-# 🏫 GET OR CREATE INSTITUTION
+# 🏫 INSTITUTION HANDLER
 # =====================================================
 def get_or_create_institution(name: str):
 
@@ -48,12 +51,12 @@ def get_or_create_institution(name: str):
     })
 
     if not new_inst:
-        raise Exception("Failed to create institution")
+        raise Exception("Institution creation failed")
 
     return new_inst["id"]
 
 # =====================================================
-# 🧠 SIGNUP USER
+# 🧠 SIGNUP USER (PRODUCTION SAFE)
 # =====================================================
 def signup_user(email: str, password: str, institution_name: str, role="student"):
 
@@ -64,15 +67,15 @@ def signup_user(email: str, password: str, institution_name: str, role="student"
         return {"error": "Invalid email format"}
 
     if len(password) < 6:
-        return {"error": "Password must be at least 6 characters"}
-
-    # check existing user
-    existing = select("users", {"email": email}, single=True)
-
-    if existing:
-        return {"error": "User already exists"}
+        return {"error": "Password too short (min 6 chars)"}
 
     try:
+        # check existing user
+        existing = select("users", {"email": email}, single=True)
+
+        if existing:
+            return {"error": "User already exists"}
+
         institution_id = get_or_create_institution(institution_name)
 
         # create user
@@ -84,7 +87,7 @@ def signup_user(email: str, password: str, institution_name: str, role="student"
         })
 
         if not user:
-            return {"error": "Failed to create user"}
+            return {"error": "User creation failed"}
 
         token = create_access_token({
             "user_id": user["id"],
@@ -104,14 +107,11 @@ def signup_user(email: str, password: str, institution_name: str, role="student"
         }
 
     except Exception as e:
-        print("[SIGNUP ERROR]", e)
-
-        return {
-            "error": "Signup failed"
-        }
+        print("[SIGNUP ERROR]", str(e))
+        return {"error": "Signup failed internally"}
 
 # =====================================================
-# 🔐 LOGIN USER
+# 🔐 LOGIN USER (PRODUCTION SAFE)
 # =====================================================
 def login_user(email: str, password: str):
 
@@ -126,7 +126,7 @@ def login_user(email: str, password: str):
         stored_password = user.get("password")
 
         if not stored_password:
-            return {"error": "Account misconfigured"}
+            return {"error": "Account corrupted"}
 
         if not verify_password(password, stored_password):
             return {"error": "Invalid credentials"}
@@ -149,8 +149,5 @@ def login_user(email: str, password: str):
         }
 
     except Exception as e:
-        print("[LOGIN ERROR]", e)
-
-        return {
-            "error": "Login failed"
-        }
+        print("[LOGIN ERROR]", str(e))
+        return {"error": "Login failed internally"}

@@ -3,63 +3,58 @@ import jwt
 
 from datetime import datetime, timedelta
 
-from fastapi import (
-    HTTPException,
-    Depends,
-    status
-)
-
-from fastapi.security import (
-    HTTPBearer,
-    HTTPAuthorizationCredentials
-)
+from fastapi import HTTPException, Depends, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 # =====================================================
-# 🔐 SECURITY CONFIG
+# 🔐 SECURITY CONFIG (PRODUCTION SAFE)
 # =====================================================
+
 SECRET_KEY = os.getenv("SECRET_KEY")
 
 if not SECRET_KEY:
     raise Exception("❌ SECRET_KEY missing in environment variables")
 
 ALGORITHM = "HS256"
-
 ACCESS_TOKEN_EXPIRE_DAYS = 7
 
 security = HTTPBearer()
 
 
 # =====================================================
-# 🚀 CREATE ACCESS TOKEN
+# 🚀 CREATE ACCESS TOKEN (JWT)
 # =====================================================
 def create_access_token(data: dict):
 
-    payload = data.copy()
+    try:
+        payload = data.copy()
 
-    payload.update({
-        "exp": datetime.utcnow() + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS),
-        "iat": datetime.utcnow(),
-        "type": "access"
-    })
+        payload.update({
+            "exp": datetime.utcnow() + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS),
+            "iat": datetime.utcnow(),
+            "type": "access"
+        })
 
-    token = jwt.encode(
-        payload,
-        SECRET_KEY,
-        algorithm=ALGORITHM
-    )
+        token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
-    return token
+        return token
+
+    except Exception as e:
+        print("[TOKEN CREATE ERROR]", str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create access token"
+        )
 
 
 # =====================================================
-# 🔓 VERIFY TOKEN
+# 🔓 VERIFY TOKEN (CORE AUTH GUARD)
 # =====================================================
 def verify_token(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
 
     try:
-
         token = credentials.credentials
 
         payload = jwt.decode(
@@ -68,33 +63,40 @@ def verify_token(
             algorithms=[ALGORITHM]
         )
 
-        # verify token type
+        # =========================
+        # 🧠 TOKEN TYPE VALIDATION
+        # =========================
         if payload.get("type") != "access":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token type"
             )
 
+        # =========================
+        # 🧠 REQUIRED FIELDS CHECK
+        # =========================
+        if not payload.get("user_id"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload"
+            )
+
         return payload
 
     except jwt.ExpiredSignatureError:
-
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token expired"
         )
 
     except jwt.InvalidTokenError:
-
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token"
         )
 
     except Exception as e:
-
-        print("[TOKEN ERROR]", e)
-
+        print("[AUTH ERROR]", str(e))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication failed"
@@ -102,7 +104,7 @@ def verify_token(
 
 
 # =====================================================
-# 👤 CURRENT USER
+# 👤 GET CURRENT USER (CLEAN WRAPPER)
 # =====================================================
 def get_current_user(
     user: dict = Depends(verify_token)
@@ -111,7 +113,7 @@ def get_current_user(
 
 
 # =====================================================
-# 🔒 REQUIRE ROLE
+# 🔒 REQUIRE ROLE (RBAC SYSTEM)
 # =====================================================
 def require_role(required_role: str):
 
@@ -122,7 +124,6 @@ def require_role(required_role: str):
         user_role = user.get("role")
 
         if user_role != required_role:
-
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Access denied. Requires role: {required_role}"
@@ -134,7 +135,7 @@ def require_role(required_role: str):
 
 
 # =====================================================
-# 🏫 REQUIRE INSTITUTION
+# 🏫 REQUIRE INSTITUTION (MULTI-TENANT SAFETY)
 # =====================================================
 def require_institution(
     user: dict = Depends(verify_token)
@@ -143,7 +144,6 @@ def require_institution(
     institution_id = user.get("institution_id")
 
     if not institution_id:
-
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Institution access required"
@@ -153,7 +153,7 @@ def require_institution(
 
 
 # =====================================================
-# 🧠 OPTIONAL MULTI-ROLE SUPPORT
+# 🧠 REQUIRE ANY ROLE (FLEXIBLE ACCESS CONTROL)
 # =====================================================
 def require_any_role(allowed_roles: list):
 
@@ -164,7 +164,6 @@ def require_any_role(allowed_roles: list):
         role = user.get("role")
 
         if role not in allowed_roles:
-
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions"
