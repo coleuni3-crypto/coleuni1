@@ -1,40 +1,85 @@
-import axios from "axios";
+import {
+  sendChat,
+  getStudyPlan,
+  getDailySchedule,
+  getExamPrediction,
+  getStudentDashboard,
+  getAIContent
+} from "./api";
 
-const API = "http://127.0.0.1:8001";
+/* =====================================================
+   🧠 STUDENT AI BRAIN (HIGH LEVEL WRAPPERS)
+===================================================== */
 
-// =========================
-// 🔐 AUTH HEADER
-// =========================
-function authHeader() {
-  const token = localStorage.getItem("token");
+/* -------------------------
+   🤖 ASK AI TUTOR
+-------------------------- */
+export async function askTutor(question) {
+  if (!question) return null;
+
+  return await sendChat(question);
+}
+
+/* -------------------------
+   📚 GET STUDY PLAN
+-------------------------- */
+export async function generateStudyPlan(topics = []) {
+  if (!topics.length) return null;
+
+  return await getStudyPlan(topics);
+}
+
+/* -------------------------
+   📅 DAILY SCHEDULE
+-------------------------- */
+export async function generateDailySchedule(topics = []) {
+  if (!topics.length) return null;
+
+  return await getDailySchedule(topics);
+}
+
+/* -------------------------
+   📊 EXAM PREDICTION
+-------------------------- */
+export async function predictExam(topics = []) {
+  if (!topics.length) return null;
+
+  return await getExamPrediction(topics);
+}
+
+/* -------------------------
+   📚 STUDENT DASHBOARD
+-------------------------- */
+export async function getDashboard() {
+  return await getStudentDashboard();
+}
+
+/* -------------------------
+   📄 AI NOTES FROM MATERIAL
+-------------------------- */
+export async function getNotes(materialId) {
+  if (!materialId) return null;
+
+  const res = await getAIContent(materialId);
+
+  return res?.package || res;
+}
+
+/* =====================================================
+   🧠 SMART COMBINED AI ACTION (POWER FEATURE)
+===================================================== */
+export async function fullLearningAnalysis(topics) {
+  if (!topics?.length) return null;
+
+  const [plan, schedule, exam] = await Promise.all([
+    getStudyPlan(topics),
+    getDailySchedule(topics),
+    getExamPrediction(topics),
+  ]);
 
   return {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    studyPlan: plan,
+    schedule,
+    examPrediction: exam,
   };
-}
-
-// =========================
-// 📚 GET AI CONTENT (FROM PDF)
-// =========================
-export async function getAIContent(materialId) {
-  const res = await axios.get(
-    `${API}/student-content/${materialId}`,
-    authHeader()
-  );
-
-  return res.data;
-}
-
-// =========================
-// 📂 GET UPLOADED MATERIALS
-// =========================
-export async function getMaterials() {
-  const res = await axios.get(
-    `${API}/upload/materials`,
-    authHeader()
-  );
-
-  return res.data;
 }

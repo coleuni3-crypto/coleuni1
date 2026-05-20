@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Request, Depends, HTTPException
-from typing import Callable, Any
+from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Callable, Dict, Any, Optional
 
 from core.security import get_current_user
 
@@ -11,84 +11,103 @@ from services.dashboard_service import (
     ai_insights_dashboard
 )
 
-router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
+router = APIRouter(prefix="/dashboard", tags=["Dashboard V5"])
 
 
 # =====================================================
-# 🧠 SAFE DASHBOARD EXECUTOR (CORE WRAPPER)
+# 🧠 ROLE GUARD (SECURITY LAYER)
 # =====================================================
-def safe_run(func: Callable, request: Request):
-    """
-    Ensures dashboard never crashes frontend.
-    """
+def require_role(user: dict, allowed_roles: list[str]):
+    role = user.get("role")
+
+    if not role:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing user role"
+        )
+
+    if role not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied for this role"
+        )
+
+
+# =====================================================
+# 🧠 SAFE DASHBOARD EXECUTOR (V5 CORE WRAPPER)
+# =====================================================
+def safe_run(func: Callable, user: dict) -> Dict[str, Any]:
+
     try:
-        result = func(request)
+        result = func(user)
 
         return {
             "success": True,
+            "engine": "dashboard-v5-core",
             "data": result,
-            "engine": "dashboard-v4-safe"
+            "user_role": user.get("role"),
+            "user_id": user.get("user_id")
         }
 
     except Exception as e:
-        print(f"[DASHBOARD ERROR] {func.__name__}:", str(e))
+        print(f"[DASHBOARD ERROR] {func.__name__}: {str(e)}")
 
-        raise HTTPException(
-            status_code=500,
-            detail=f"{func.__name__} failed"
-        )
+        return {
+            "success": False,
+            "engine": "dashboard-v5-core",
+            "error": f"{func.__name__} failed",
+            "data": {}
+        }
 
 
 # =====================================================
 # 👨‍🎓 STUDENT DASHBOARD
 # =====================================================
 @router.get("/student")
-def student(request: Request, user=Depends(get_current_user)):
+def student(user=Depends(get_current_user)):
 
-    request.state.user = user
+    require_role(user, ["student"])
 
-    return safe_run(student_dashboard, request)
+    return safe_run(student_dashboard, user)
 
 
 # =====================================================
 # 👨‍🏫 TEACHER DASHBOARD
 # =====================================================
 @router.get("/teacher")
-def teacher(request: Request, user=Depends(get_current_user)):
+def teacher(user=Depends(get_current_user)):
 
-    request.state.user = user
+    require_role(user, ["teacher", "admin"])
 
-    return safe_run(teacher_dashboard, request)
+    return safe_run(teacher_dashboard, user)
 
 
 # =====================================================
 # 🏫 ADMIN DASHBOARD
 # =====================================================
 @router.get("/admin")
-def admin(request: Request, user=Depends(get_current_user)):
+def admin(user=Depends(get_current_user)):
 
-    request.state.user = user
+    require_role(user, ["admin"])
 
-    return safe_run(admin_dashboard, request)
+    return safe_run(admin_dashboard, user)
 
 
 # =====================================================
 # 🏫 INSTITUTION DASHBOARD
 # =====================================================
 @router.get("/institution")
-def institution(request: Request, user=Depends(get_current_user)):
+def institution(user=Depends(get_current_user)):
 
-    request.state.user = user
+    require_role(user, ["admin", "teacher"])
 
-    return safe_run(institution_dashboard, request)
+    return safe_run(institution_dashboard, user)
 
 
 # =====================================================
-# 🧠 AI INSIGHTS DASHBOARD
+# 🧠 AI INSIGHTS DASHBOARD (ALL ROLES)
 # =====================================================
 @router.get("/insights")
-def insights(request: Request, user=Depends(get_current_user)):
+def insights(user=Depends(get_current_user)):
 
-    request.state.user = user
-
-    return safe_run(ai_insights_dashboard, request)
+    return safe_run(ai_insights_dashboard, user)

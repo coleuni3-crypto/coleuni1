@@ -1,61 +1,141 @@
-# =====================================================
-# 🧠 AI NOTES GENERATOR (MVP)
-# Later replace with OpenAI
-# =====================================================
+import os
+import json
+from openai import OpenAI
 
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+MODEL = "gpt-4o-mini"
+
+
+# =====================================================
+# 🧠 SAFE AI CALL (NOT BREAKABLE)
+# =====================================================
+def safe_ai_generate(messages):
+
+    try:
+        res = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            temperature=0.4
+        )
+
+        content = res.choices[0].message.content
+
+        # try structured JSON parsing
+        try:
+            return {
+                "success": True,
+                "data": json.loads(content)
+            }
+        except:
+            return {
+                "success": True,
+                "data": {
+                    "notes": content,
+                    "flashcards": [],
+                    "quiz": [],
+                    "audio_text": content
+                }
+            }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+# =====================================================
+# 🧠 AI NOTES GENERATOR (V2 - PRODUCTION READY)
+# =====================================================
 def generate_ai_notes(text: str):
 
-    # shorten huge PDFs for MVP
-    short_text = text[:3000]
+    if not text:
+        return {
+            "success": False,
+            "error": "No input text provided"
+        }
 
-    # =================================================
-    # SIMPLE AI LOGIC (MVP)
-    # =================================================
-    notes = f"""
-    AI Study Notes
+    # limit input for cost + safety
+    clean_text = text[:6000]
 
-    Summary:
-    {short_text[:1000]}
+    # =====================================================
+    # 🌍 AI PROMPT ENGINE
+    # =====================================================
+    prompt = f"""
+You are ColeUni AI Study Engine.
 
-    Important Concepts:
-    - Understanding the core topic
-    - Key academic principles
-    - Exam-focused learning
-    """
+Convert the material into STRICT JSON ONLY:
 
-    flashcards = [
+{{
+  "notes": "clean structured study notes",
+  "summary": "short exam-focused summary",
+  "key_concepts": ["concept 1", "concept 2", "concept 3"],
+
+  "flashcards": [
+    {{
+      "question": "...",
+      "answer": "..."
+    }}
+  ],
+
+  "quiz": [
+    {{
+      "question": "...",
+      "options": ["A", "B", "C", "D"],
+      "answer": "..."
+    }}
+  ],
+
+  "audio_text": "simple spoken explanation for students"
+}}
+
+RULES:
+- Make it exam-focused
+- Keep language simple
+- Focus on understanding, not copying text
+- Extract real learning concepts
+
+MATERIAL:
+{clean_text}
+"""
+
+    result = safe_ai_generate([
         {
-            "question": "What is the main topic?",
-            "answer": short_text[:120]
+            "role": "system",
+            "content": "You are a strict educational AI that outputs only valid JSON."
         },
         {
-            "question": "Why is this topic important?",
-            "answer": "It is important for understanding exam concepts."
+            "role": "user",
+            "content": prompt
         }
-    ]
+    ])
 
-    quiz = [
-        {
-            "question": "What is the focus of this material?",
-            "options": [
-                "Main academic concept",
-                "Random data",
-                "Entertainment",
-                "None"
-            ],
-            "answer": "Main academic concept"
+    # =====================================================
+    # 🔥 FALLBACK (IF AI FAILS)
+    # =====================================================
+    if not result["success"]:
+        return {
+            "success": False,
+            "notes": "AI generation failed",
+            "flashcards": [],
+            "quiz": [],
+            "audio_text": "",
+            "error": result.get("error")
         }
-    ]
 
-    audio_text = f"""
-    Welcome to ColeUni AI Learning.
-    Today's lesson discusses:
-    {short_text[:500]}
-    """
+    data = result["data"]
 
+    # =====================================================
+    # 🧠 ENSURE SAFE STRUCTURE
+    # =====================================================
     return {
-        "notes": notes,
-        "flashcards": flashcards,
-        "quiz": quiz,
-        "audio_text": audio_text
+        "success": True,
+        "notes": data.get("notes", ""),
+        "summary": data.get("summary", ""),
+        "key_concepts": data.get("key_concepts", []),
+        "flashcards": data.get("flashcards", []),
+        "quiz": data.get("quiz", []),
+        "audio_text": data.get("audio_text", ""),
+        "engine": "coleuni-ai-notes-v2"
     }

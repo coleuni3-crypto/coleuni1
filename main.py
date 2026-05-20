@@ -8,7 +8,6 @@ import sys
 # 🧠 COLEUNI AI SCHOOL OS - V4.5 PRODUCTION CORE
 # =====================================================
 
-# 🔥 FORCE ROOT PATH (CRITICAL FIX FOR WINDOWS + RENDER)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 
@@ -19,16 +18,26 @@ app = FastAPI(
 )
 
 # =====================================================
+# 🌐 ENV-BASED FRONTEND CONFIG (IMPORTANT FOR RENDER)
+# =====================================================
+FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+
+allow_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+if FRONTEND_URL:
+    allow_origins.append(FRONTEND_URL)
+
+# =====================================================
 # 🌐 CORS CONFIG
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,7 +50,7 @@ routers = {}
 router_status = {}
 
 # =====================================================
-# 🔗 ROBUST ROUTER LOADER (PRODUCTION SAFE)
+# 🔗 ROBUST ROUTER LOADER
 # =====================================================
 def load_router(name: str, import_path: str, obj_name: str = "router"):
     try:
@@ -86,7 +95,7 @@ def load_router(name: str, import_path: str, obj_name: str = "router"):
         print(f"❌ ERROR: {name} -> {e}")
 
 # =====================================================
-# 🔗 LOAD CORE SYSTEM MODULES
+# 🔗 LOAD CORE MODULES
 # =====================================================
 load_router("auth", "coleuni.api.auth_routes")
 load_router("ai", "coleuni.api.ai_routes")

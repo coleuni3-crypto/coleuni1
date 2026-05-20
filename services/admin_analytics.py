@@ -1,8 +1,10 @@
 from core.supabase_http import select
+from collections import defaultdict
+from statistics import mean
 
 
 # =====================================================
-# 📊 SYSTEM ANALYTICS (INSTITUTION LEVEL)
+# 📊 SYSTEM ANALYTICS (INSTITUTION LEVEL - V5)
 # =====================================================
 def get_system_analytics(institution_id: str):
 
@@ -12,53 +14,75 @@ def get_system_analytics(institution_id: str):
 
     if not data:
         return {
+            "status": "empty",
             "total_interactions": 0,
             "average_score": 0,
             "weak_topics": [],
-            "strong_topics": []
+            "strong_topics": [],
+            "insight": "No learning data yet"
         }
 
+    # =====================================================
+    # 📊 BASIC METRICS
+    # =====================================================
+    scores = [r.get("score") for r in data if isinstance(r.get("score"), (int, float))]
     total_interactions = len(data)
-
-    scores = [row.get("score", 0) for row in data if row.get("score") is not None]
-    avg_score = sum(scores) / len(scores) if scores else 0
+    avg_score = round(mean(scores), 2) if scores else 0
 
     # =====================================================
-    # TOPIC GROUPING (IN MEMORY - SUPABASE SAFE)
+    # 🧠 TOPIC INTELLIGENCE ENGINE (IMPROVED)
     # =====================================================
-    topic_map = {}
+    topic_scores = defaultdict(list)
 
     for row in data:
-        topic = row.get("topic", "unknown")
-        score = row.get("score", 0)
+        topic = row.get("topic") or "unknown"
+        score = row.get("score")
 
-        topic_map.setdefault(topic, []).append(score)
+        if isinstance(score, (int, float)):
+            topic_scores[topic].append(score)
 
-    topic_avg = [
-        {
+    topic_analysis = []
+    for topic, scores in topic_scores.items():
+        if not scores:
+            continue
+
+        topic_analysis.append({
             "topic": topic,
-            "score": round(sum(scores) / len(scores), 2)
-        }
-        for topic, scores in topic_map.items()
-        if scores
-    ]
+            "average_score": round(mean(scores), 2),
+            "attempts": len(scores)
+        })
 
-    # weak topics (lowest performance)
-    weak_topics = sorted(topic_avg, key=lambda x: x["score"])[:5]
+    # =====================================================
+    # 📉 WEAK / STRONG DETECTION (SMART THRESHOLDS)
+    # =====================================================
+    weak_topics = sorted(topic_analysis, key=lambda x: x["average_score"])[:5]
+    strong_topics = sorted(topic_analysis, key=lambda x: x["average_score"], reverse=True)[:5]
 
-    # strong topics (highest performance)
-    strong_topics = sorted(topic_avg, key=lambda x: x["score"], reverse=True)[:5]
+    # =====================================================
+    # 🧠 INSIGHT ENGINE (NEW)
+    # =====================================================
+    insight = "Stable learning performance"
+
+    if avg_score < 40:
+        insight = "Critical learning risk detected"
+    elif avg_score < 60:
+        insight = "Moderate performance - needs improvement"
+    elif avg_score > 80:
+        insight = "Excellent learning performance"
 
     return {
+        "status": "success",
+        "engine": "coleuni-analytics-v5",
         "total_interactions": total_interactions,
-        "average_score": round(avg_score, 2),
+        "average_score": avg_score,
         "weak_topics": weak_topics,
-        "strong_topics": strong_topics
+        "strong_topics": strong_topics,
+        "insight": insight
     }
 
 
 # =====================================================
-# 💰 COST ESTIMATION (SAAS USAGE MODEL)
+# 💰 COST ESTIMATION (SAAS MODEL V2)
 # =====================================================
 def estimate_cost(institution_id: str):
 
@@ -68,16 +92,27 @@ def estimate_cost(institution_id: str):
 
     usage = len(data)
 
-    cost = usage * 0.002  # AI usage cost model (placeholder)
+    # smarter pricing tiers
+    if usage < 100:
+        rate = 0.0015
+    elif usage < 1000:
+        rate = 0.0012
+    else:
+        rate = 0.001
+
+    cost = usage * rate
 
     return {
+        "status": "success",
         "usage_count": usage,
-        "estimated_cost_usd": round(cost, 4)
+        "rate_per_request": rate,
+        "estimated_cost_usd": round(cost, 4),
+        "engine": "coleuni-cost-v2"
     }
 
 
 # =====================================================
-# 🧑‍🎓 TOP STUDENTS
+# 🧑‍🎓 TOP STUDENTS (CLEAN RANKING ENGINE)
 # =====================================================
 def get_top_students(institution_id: str):
 
@@ -85,30 +120,34 @@ def get_top_students(institution_id: str):
         "institution_id": institution_id
     }) or []
 
-    student_map = {}
+    if not data:
+        return []
+
+    student_scores = defaultdict(list)
 
     for row in data:
         sid = row.get("student_id")
-        score = row.get("score", 0)
+        score = row.get("score")
 
-        if not sid:
-            continue
+        if sid and isinstance(score, (int, float)):
+            student_scores[sid].append(score)
 
-        student_map.setdefault(sid, []).append(score)
-
-    results = [
+    ranked = [
         {
             "student_id": sid,
-            "average_score": round(sum(scores) / len(scores), 2)
+            "average_score": round(mean(scores), 2),
+            "total_attempts": len(scores)
         }
-        for sid, scores in student_map.items()
+        for sid, scores in student_scores.items()
     ]
 
-    return sorted(results, key=lambda x: x["average_score"], reverse=True)[:10]
+    ranked.sort(key=lambda x: x["average_score"], reverse=True)
+
+    return ranked[:10]
 
 
 # =====================================================
-# ⚠️ AT-RISK STUDENTS
+# ⚠️ AT-RISK STUDENTS (SMART DETECTION V2)
 # =====================================================
 def get_at_risk_students(institution_id: str):
 
@@ -116,27 +155,38 @@ def get_at_risk_students(institution_id: str):
         "institution_id": institution_id
     }) or []
 
-    student_map = {}
+    if not data:
+        return []
+
+    student_scores = defaultdict(list)
 
     for row in data:
         sid = row.get("student_id")
-        score = row.get("score", 0)
+        score = row.get("score")
 
-        if not sid:
-            continue
+        if sid and isinstance(score, (int, float)):
+            student_scores[sid].append(score)
 
-        student_map.setdefault(sid, []).append(score)
+    at_risk = []
 
-    results = []
+    for sid, scores in student_scores.items():
+        avg = mean(scores)
 
-    for sid, scores in student_map.items():
-        avg = sum(scores) / len(scores)
+        risk_level = None
 
-        if avg < 50:
-            results.append({
+        if avg < 40:
+            risk_level = "critical"
+        elif avg < 55:
+            risk_level = "high"
+        elif avg < 65:
+            risk_level = "medium"
+
+        if risk_level:
+            at_risk.append({
                 "student_id": sid,
                 "average_score": round(avg, 2),
-                "risk_level": "high" if avg < 40 else "medium"
+                "risk_level": risk_level,
+                "attempts": len(scores)
             })
 
-    return sorted(results, key=lambda x: x["average_score"])
+    return sorted(at_risk, key=lambda x: x["average_score"])

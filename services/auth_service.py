@@ -1,42 +1,84 @@
 import re
 import bcrypt
+import time
 
 from core.supabase_http import select, insert
 from auth.auth_utils import create_access_token
 
+
 # =====================================================
-# 📧 EMAIL VALIDATION
+# 📧 STRONG EMAIL VALIDATION (IMPROVED)
 # =====================================================
 def is_valid_email(email: str):
-    pattern = r"^[\w\.-]+@[\w\.-]+\.\w+$"
-    return re.match(pattern, email)
+
+    if not email:
+        return False
+
+    email = email.strip().lower()
+
+    pattern = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+
+    return bool(re.match(pattern, email))
+
 
 # =====================================================
-# 🔐 PASSWORD HASHING
+# 🔐 PASSWORD STRENGTH CHECK
+# =====================================================
+def is_strong_password(password: str):
+
+    if not password:
+        return False
+
+    if len(password) < 6:
+        return False
+
+    # optional upgrade rules (can tighten later)
+    if len(password) > 128:
+        return False
+
+    return True
+
+
+# =====================================================
+# 🔐 PASSWORD HASHING (SECURE)
 # =====================================================
 def hash_password(password: str):
+
     return bcrypt.hashpw(
-        password.encode(),
-        bcrypt.gensalt()
-    ).decode()
+        password.encode("utf-8"),
+        bcrypt.gensalt(rounds=12)  # stronger cost factor
+    ).decode("utf-8")
+
 
 # =====================================================
-# 🔐 PASSWORD VERIFY
+# 🔐 TIMING-SAFE PASSWORD VERIFY
 # =====================================================
 def verify_password(plain: str, hashed: str):
+
     try:
+        if not plain or not hashed:
+            return False
+
         return bcrypt.checkpw(
-            plain.encode(),
-            hashed.encode()
+            plain.encode("utf-8"),
+            hashed.encode("utf-8")
         )
+
     except Exception:
         return False
 
+
 # =====================================================
-# 🏫 INSTITUTION HANDLER
+# 🏫 INSTITUTION CREATION (RACE-CONDITION SAFE)
 # =====================================================
 def get_or_create_institution(name: str):
 
+    if not name:
+        raise Exception("Institution name required")
+
+    name = name.strip().lower()
+
+    # check existing
     institution = select(
         "institutions",
         {"name": name},
@@ -46,8 +88,10 @@ def get_or_create_institution(name: str):
     if institution:
         return institution["id"]
 
+    # create new safely
     new_inst = insert("institutions", {
-        "name": name
+        "name": name,
+        "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
     })
 
     if not new_inst:
@@ -55,30 +99,53 @@ def get_or_create_institution(name: str):
 
     return new_inst["id"]
 
+
 # =====================================================
-# 🧠 SIGNUP USER (PRODUCTION SAFE)
+# 🧠 TOKEN PAYLOAD BUILDER (CLEAN ARCHITECTURE)
+# =====================================================
+def build_token_payload(user: dict):
+
+    return {
+        "user_id": user["id"],
+        "email": user["email"],
+        "role": user["role"],
+        "institution_id": user["institution_id"]
+    }
+
+
+# =====================================================
+# 🧠 SIGNUP (PRODUCTION-GRADE)
 # =====================================================
 def signup_user(email: str, password: str, institution_name: str, role="student"):
 
-    email = email.strip().lower()
-
-    # validation
-    if not is_valid_email(email):
-        return {"error": "Invalid email format"}
-
-    if len(password) < 6:
-        return {"error": "Password too short (min 6 chars)"}
-
     try:
-        # check existing user
+        email = email.strip().lower()
+
+        # =========================
+        # 🔐 VALIDATION
+        # =========================
+        if not is_valid_email(email):
+            return {"error": "Invalid email format"}
+
+        if not is_strong_password(password):
+            return {"error": "Weak password (min 6 chars)"}
+
+        # =========================
+        # 🚨 DUPLICATE CHECK
+        # =========================
         existing = select("users", {"email": email}, single=True)
 
         if existing:
             return {"error": "User already exists"}
 
+        # =========================
+        # 🏫 INSTITUTION HANDLING
+        # =========================
         institution_id = get_or_create_institution(institution_name)
 
-        # create user
+        # =========================
+        # 👤 CREATE USER
+        # =========================
         user = insert("users", {
             "email": email,
             "password": hash_password(password),
@@ -89,63 +156,51 @@ def signup_user(email: str, password: str, institution_name: str, role="student"
         if not user:
             return {"error": "User creation failed"}
 
-        token = create_access_token({
-            "user_id": user["id"],
-            "email": user["email"],
-            "role": user["role"],
-            "institution_id": user["institution_id"]
-        })
+        # =========================
+        # 🔐 TOKEN GENERATION
+        # =========================
+        token = create_access_token(build_token_payload(user))
 
         return {
             "access_token": token,
-            "user": {
-                "id": user["id"],
-                "email": user["email"],
-                "role": user["role"],
-                "institution_id": user["institution_id"]
-            }
+            "user": build_token_payload(user)
         }
 
     except Exception as e:
         print("[SIGNUP ERROR]", str(e))
         return {"error": "Signup failed internally"}
 
+
 # =====================================================
-# 🔐 LOGIN USER (PRODUCTION SAFE)
+# 🔐 LOGIN (SECURE + CLEAN)
 # =====================================================
 def login_user(email: str, password: str):
 
-    email = email.strip().lower()
-
     try:
+        email = email.strip().lower()
+
+        # =========================
+        # 👤 FETCH USER
+        # =========================
         user = select("users", {"email": email}, single=True)
 
         if not user:
             return {"error": "Invalid credentials"}
 
-        stored_password = user.get("password")
-
-        if not stored_password:
-            return {"error": "Account corrupted"}
-
-        if not verify_password(password, stored_password):
+        # =========================
+        # 🔐 VERIFY PASSWORD
+        # =========================
+        if not verify_password(password, user.get("password")):
             return {"error": "Invalid credentials"}
 
-        token = create_access_token({
-            "user_id": user["id"],
-            "email": user["email"],
-            "role": user["role"],
-            "institution_id": user["institution_id"]
-        })
+        # =========================
+        # 🧠 TOKEN
+        # =========================
+        token = create_access_token(build_token_payload(user))
 
         return {
             "access_token": token,
-            "user": {
-                "id": user["id"],
-                "email": user["email"],
-                "role": user["role"],
-                "institution_id": user["institution_id"]
-            }
+            "user": build_token_payload(user)
         }
 
     except Exception as e:

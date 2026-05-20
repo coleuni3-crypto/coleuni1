@@ -3,7 +3,10 @@ import json
 from openai import OpenAI
 
 from rag.vector_store import search_vectors
-from services.student_service import get_student_memory, get_weak_topics
+from services.student_service import (
+    get_student_memory,
+    get_weak_topics
+)
 from services.learning_loop import process_learning_event
 from services.study_autopilot import (
     generate_study_plan,
@@ -12,72 +15,95 @@ from services.study_autopilot import (
 )
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 MODEL = "gpt-4o-mini"
 
 
 # =====================================================
-# 🔐 SAFE OPENAI CALL (V4 PRODUCTION)
+# 🧠 CONTEXT BUILDER (V5 NORMALIZED MEMORY LAYER)
 # =====================================================
-def safe_openai_call(messages):
+def build_context(memory, weak_topics, rag_context):
 
-    try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=messages,
-            temperature=0.4
-        )
+    return {
+        "memory": memory.get("interactions", []) if isinstance(memory, dict) else [],
+        "memory_strength": memory.get("memory_strength", 0) if isinstance(memory, dict) else 0,
+        "weak_topics": weak_topics or [],
+        "knowledge_context": rag_context or ""
+    }
 
-        content = response.choices[0].message.content
 
-        # try strict JSON parse
+# =====================================================
+# 🔐 SAFE OPENAI CALL (V5 - STRICT + STABLE)
+# =====================================================
+def safe_openai_call(messages, retries: int = 2):
+
+    last_error = None
+
+    for attempt in range(retries):
+
         try:
-            data = json.loads(content)
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                temperature=0.3
+            )
 
-            if not isinstance(data, dict):
-                raise ValueError("Invalid JSON structure")
+            content = response.choices[0].message.content.strip()
 
-            return {
-                "success": True,
-                "data": data,
-                "format": "json"
-            }
+            # =========================
+            # 🧠 STRICT JSON PARSING
+            # =========================
+            try:
+                parsed = json.loads(content)
 
-        except Exception:
-            return {
-                "success": True,
-                "data": {
-                    "answer": content,
-                    "key_concepts": [],
-                    "difficulty": "medium",
-                    "student_feedback": {
-                        "understood": False,
-                        "confidence_score": 0
+                if not isinstance(parsed, dict):
+                    raise ValueError("Invalid JSON structure")
+
+                return {
+                    "success": True,
+                    "data": parsed,
+                    "format": "json",
+                    "attempt": attempt + 1
+                }
+
+            except Exception:
+                # fallback structured output
+                return {
+                    "success": True,
+                    "data": {
+                        "answer": content,
+                        "key_concepts": [],
+                        "difficulty": "medium",
+                        "confidence": 50,
+                        "next_step": "",
+                        "revision_needed": []
                     },
-                    "next_lesson_suggestion": "",
-                    "revision_needed": []
-                },
-                "format": "fallback_text"
-            }
+                    "format": "fallback_text",
+                    "attempt": attempt + 1
+                }
 
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "engine": "openai_failure"
-        }
+        except Exception as e:
+            last_error = str(e)
+
+    return {
+        "success": False,
+        "error": last_error,
+        "engine": "openai_failed_after_retries"
+    }
 
 
 # =====================================================
-# 🤖 ADAPTIVE CHAT ENGINE (CORE)
+# 🤖 CHAT ENGINE (COLEUNI AI BRAIN V5 CORE)
 # =====================================================
 async def chat(query: str, user: dict):
 
     if not query:
         return {"success": False, "error": "Missing query"}
 
-    student_id = user["user_id"]
-    institution_id = user["institution_id"]
+    student_id = user.get("user_id")
+    institution_id = user.get("institution_id")
+
+    if not student_id or not institution_id:
+        return {"success": False, "error": "Invalid user context"}
 
     # =========================
     # 🧠 PERSONALIZATION LAYER
@@ -85,60 +111,64 @@ async def chat(query: str, user: dict):
     memory = get_student_memory(student_id, institution_id)
     weak_topics = get_weak_topics(student_id, institution_id)
 
-    context_data = search_vectors(institution_id, query) or []
-    context = "\n".join([c.get("content", "") for c in context_data])
+    rag_results = search_vectors(institution_id, query) or []
+
+    rag_context = "\n".join(
+        r.get("content", "") for r in rag_results if r.get("content")
+    )
+
+    context = build_context(memory, weak_topics, rag_context)
 
     # =========================
-    # 🌍 AI PROMPT
+    # 🧠 SYSTEM PROMPT (TIGHT CONTROL)
     # =========================
-    prompt = f"""
-You are ColeUni Adaptive Education OS V4.
+    system_prompt = """
+You are ColeUni AI Tutor (V5 Adaptive Brain).
 
-Return STRICT JSON ONLY:
+RULES:
+- Be simple, structured, and exam-focused
+- Personalize using weak topics
+- Use provided context only
+- Never hallucinate
+- ALWAYS return valid JSON
 
-{{
-  "answer": "...",
-  "key_concepts": ["..."],
-  "difficulty": "easy | medium | hard",
-  "student_feedback": {{
-      "understood": false,
-      "confidence_score": 0-100
-  }},
-  "next_lesson_suggestion": "...",
-  "revision_needed": ["..."]
-}}
+OUTPUT FORMAT:
+{
+  "answer": "string",
+  "key_concepts": ["string"],
+  "difficulty": "easy|medium|hard",
+  "confidence": number,
+  "next_step": "string",
+  "revision_needed": ["string"]
+}
+"""
 
-STUDENT MEMORY:
-{memory}
-
-WEAK TOPICS:
-{weak_topics}
-
-CONTEXT:
-{context}
+    user_prompt = f"""
+STUDENT CONTEXT:
+{json.dumps(context, ensure_ascii=False)}
 
 QUESTION:
 {query}
 """
 
     result = safe_openai_call([
-        {"role": "system", "content": "You are a strict AI tutor. Output ONLY JSON."},
-        {"role": "user", "content": prompt}
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
     ])
 
     # =========================
-    # 📊 LEARNING LOOP
+    # 📊 LEARNING LOOP ENGINE
     # =========================
     loop_result = process_learning_event(
         student_id=student_id,
         institution_id=institution_id,
         query=query,
-        ai_response=result
+        ai_response=result.get("data", {})
     )
 
     return {
         "success": True,
-        "engine": "coleuni-v4-adaptive",
+        "engine": "coleuni-ai-brain-v5",
         "response": result,
         "learning_loop": loop_result
     }
@@ -152,10 +182,10 @@ async def exam_predict(topics: list, user: dict):
     try:
         return {
             "success": True,
-            "engine": "v4-risk-ai",
+            "engine": "exam-risk-ai-v5",
             "data": exam_risk_analysis(
-                user["user_id"],
-                user["institution_id"],
+                user.get("user_id"),
+                user.get("institution_id"),
                 topics
             )
         }
@@ -165,17 +195,17 @@ async def exam_predict(topics: list, user: dict):
 
 
 # =====================================================
-# 📅 STUDY PLAN ENGINE
+# 📚 STUDY PLAN ENGINE
 # =====================================================
 async def study_plan(topics: list, user: dict):
 
     try:
         return {
             "success": True,
-            "engine": "adaptive-study-planner-v4",
+            "engine": "study-planner-v5",
             "plan": generate_study_plan(
-                user["user_id"],
-                user["institution_id"],
+                user.get("user_id"),
+                user.get("institution_id"),
                 topics
             )
         }
@@ -192,10 +222,10 @@ async def daily_schedule(topics: list, user: dict):
     try:
         return {
             "success": True,
-            "engine": "daily-learning-os-v4",
+            "engine": "daily-scheduler-v5",
             "schedule": build_daily_schedule(
-                user["user_id"],
-                user["institution_id"],
+                user.get("user_id"),
+                user.get("institution_id"),
                 topics
             )
         }

@@ -1,12 +1,41 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Dict, Any
+
 from core.security import verify_token, require_role, require_institution
 from services.admin_service import AdminService
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+router = APIRouter(prefix="/admin", tags=["Admin V5"])
 
 
 # =====================================================
-# 🏫 ADMIN OVERVIEW (V4 CORE DASHBOARD ENGINE)
+# 🧠 SAFE ADMIN SERVICE WRAPPER
+# =====================================================
+def safe_admin_call(func, service: AdminService) -> Dict[str, Any]:
+
+    try:
+        result = func()
+
+        return {
+            "success": True,
+            "engine": "admin-v5-core",
+            "data": result,
+            "institution_id": service.institution_id,
+            "admin_id": service.user.get("user_id")
+        }
+
+    except Exception as e:
+        print(f"[ADMIN ERROR] {func.__name__}: {str(e)}")
+
+        return {
+            "success": False,
+            "engine": "admin-v5-core",
+            "error": f"{func.__name__} failed",
+            "data": {}
+        }
+
+
+# =====================================================
+# 🏫 ADMIN OVERVIEW (CORE METRICS DASHBOARD)
 # =====================================================
 @router.get("/overview")
 def overview(
@@ -14,25 +43,14 @@ def overview(
     institution_id=Depends(require_institution)
 ):
 
-    try:
-        service = AdminService(user)
+    service = AdminService(user)
+    service.institution_id = institution_id
 
-        return {
-            "success": True,
-            "engine": "admin-overview-v4",
-            "institution_id": institution_id,
-            "data": service.get_overview()
-        }
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Admin overview failed: {str(e)}"
-        )
+    return safe_admin_call(service.get_overview, service)
 
 
 # =====================================================
-# 🧠 TOP STUDENTS ENGINE
+# 🧠 TOP STUDENTS ENGINE (PERFORMANCE ANALYTICS)
 # =====================================================
 @router.get("/top-students")
 def top_students(
@@ -40,25 +58,14 @@ def top_students(
     institution_id=Depends(require_institution)
 ):
 
-    try:
-        service = AdminService(user)
+    service = AdminService(user)
+    service.institution_id = institution_id
 
-        return {
-            "success": True,
-            "engine": "admin-top-students-v4",
-            "institution_id": institution_id,
-            "data": service.get_top_students()
-        }
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Top students fetch failed: {str(e)}"
-        )
+    return safe_admin_call(service.get_top_students, service)
 
 
 # =====================================================
-# ⚠️ AT-RISK STUDENTS ENGINE
+# ⚠️ AT-RISK STUDENTS ENGINE (AI ALERT SYSTEM)
 # =====================================================
 @router.get("/at-risk")
 def at_risk_students(
@@ -66,51 +73,51 @@ def at_risk_students(
     institution_id=Depends(require_institution)
 ):
 
-    try:
-        service = AdminService(user)
+    service = AdminService(user)
+    service.institution_id = institution_id
 
-        return {
-            "success": True,
-            "engine": "admin-risk-analysis-v4",
-            "institution_id": institution_id,
-            "data": service.get_at_risk_students()
-        }
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"At-risk analysis failed: {str(e)}"
-        )
+    return safe_admin_call(service.get_at_risk_students, service)
 
 
 # =====================================================
-# 👤 ADMIN PROFILE
+# 👤 ADMIN PROFILE (SAFE IDENTITY LAYER)
 # =====================================================
 @router.get("/me")
 def current_admin(user=Depends(verify_token)):
 
-    return {
-        "success": True,
-        "engine": "admin-profile-v4",
-        "user": {
-            "id": user.get("user_id"),
-            "email": user.get("email"),
-            "role": user.get("role"),
-            "institution_id": user.get("institution_id")
+    try:
+        return {
+            "success": True,
+            "engine": "admin-profile-v5",
+            "data": {
+                "id": user.get("user_id"),
+                "email": user.get("email"),
+                "role": user.get("role"),
+                "institution_id": user.get("institution_id")
+            }
         }
-    }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 
 # =====================================================
-# ❤️ HEALTH CHECK (ADMIN MODULE)
+# ❤️ HEALTH CHECK (SYSTEM MONITORING)
 # =====================================================
 @router.get("/health")
 def admin_health():
 
     return {
         "success": True,
-        "engine": "admin-module-v4",
+        "engine": "admin-v5-core",
         "status": "healthy",
-        "auth": "active",
-        "multi_tenant": True
+        "features": {
+            "multi_tenant": True,
+            "rbac": True,
+            "analytics": True,
+            "ai_monitoring": True
+        }
     }

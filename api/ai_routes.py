@@ -1,164 +1,159 @@
-from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from typing import List, Optional
+
 from core.security import verify_token
 from services import ai_service
 
-router = APIRouter(prefix="/ai", tags=["AI Engine"])
+router = APIRouter(prefix="/ai", tags=["COLEUNI AI ENGINE V4"])
 
 
 # =====================================================
-# 🔐 SAFE REQUEST PARSER (PRODUCTION SAFE)
+# 🧠 REQUEST MODELS (STRICT + SAFE)
 # =====================================================
-async def get_body(request: Request):
-    try:
-        return await request.json()
-    except Exception:
-        return {}
+
+class ChatRequest(BaseModel):
+    query: str
+    context: Optional[str] = "student"
+    history: Optional[List[dict]] = []
+
+
+class TopicRequest(BaseModel):
+    topics: List[str]
+
+
+class MaterialRequest(BaseModel):
+    material_id: str
 
 
 # =====================================================
-# 🤖 CHAT (AI TUTOR CORE ENGINE)
+# 🔥 RESPONSE WRAPPER (STANDARD FORMAT)
 # =====================================================
+
+def success(data, message="success"):
+    return {
+        "success": True,
+        "message": message,
+        "data": data
+    }
+
+
+def fail(message="error", code=500):
+    raise HTTPException(
+        status_code=code,
+        detail={
+            "success": False,
+            "message": message
+        }
+    )
+
+
+# =====================================================
+# 🤖 CHAT ENGINE (COLEUNI AI TUTOR CORE)
+# =====================================================
+
 @router.post("/chat")
-async def chat(request: Request, user=Depends(verify_token)):
-
-    body = await get_body(request)
-
-    query = body.get("query")
-
-    if not query:
-        raise HTTPException(
-            status_code=400,
-            detail="Query is required"
-        )
+async def chat(req: ChatRequest, user=Depends(verify_token)):
 
     try:
-        return await ai_service.chat(
-            query=query,
-            user=user
+        institution_id = user.get("institution_id")
+        if not institution_id:
+            return fail("Missing institution context", 400)
+
+        result = await ai_service.chat(
+            query=req.query,
+            user=user,
+            context=req.context,
+            history=req.history
         )
+
+        return success(result, "chat response generated")
 
     except Exception as e:
         print("[AI CHAT ERROR]", str(e))
-        raise HTTPException(
-            status_code=500,
-            detail="AI chat failed"
-        )
+        return fail("AI chat failed")
 
 
 # =====================================================
 # 📊 EXAM PREDICTION ENGINE
 # =====================================================
+
 @router.post("/exam-predict")
-async def exam_predict(request: Request, user=Depends(verify_token)):
-
-    body = await get_body(request)
-
-    topics = body.get("topics", [])
-
-    if not isinstance(topics, list):
-        raise HTTPException(
-            status_code=400,
-            detail="topics must be a list"
-        )
+async def exam_predict(req: TopicRequest, user=Depends(verify_token)):
 
     try:
-        return await ai_service.exam_predict(
-            topics=topics,
+        result = await ai_service.exam_predict(
+            topics=req.topics,
             user=user
         )
+
+        return success(result, "exam prediction completed")
 
     except Exception as e:
         print("[AI EXAM PREDICT ERROR]", str(e))
-        raise HTTPException(
-            status_code=500,
-            detail="Exam prediction failed"
-        )
+        return fail("exam prediction failed")
 
 
 # =====================================================
-# 📚 STUDY PLAN ENGINE
+# 📚 STUDY PLAN ENGINE (AI AUTOPILOT)
 # =====================================================
+
 @router.post("/study-plan")
-async def study_plan(request: Request, user=Depends(verify_token)):
-
-    body = await get_body(request)
-
-    topics = body.get("topics", [])
+async def study_plan(req: TopicRequest, user=Depends(verify_token)):
 
     try:
-        return await ai_service.study_plan(
-            topics=topics,
+        result = await ai_service.study_plan(
+            topics=req.topics,
             user=user
         )
 
+        return success(result, "study plan generated")
+
     except Exception as e:
         print("[AI STUDY PLAN ERROR]", str(e))
-        raise HTTPException(
-            status_code=500,
-            detail="Study plan failed"
-        )
+        return fail("study plan failed")
 
 
 # =====================================================
 # 🗓 DAILY SCHEDULE ENGINE
 # =====================================================
+
 @router.post("/daily-schedule")
-async def daily_schedule(request: Request, user=Depends(verify_token)):
-
-    body = await get_body(request)
-
-    topics = body.get("topics", [])
+async def daily_schedule(req: TopicRequest, user=Depends(verify_token)):
 
     try:
-        return await ai_service.daily_schedule(
-            topics=topics,
+        result = await ai_service.daily_schedule(
+            topics=req.topics,
             user=user
         )
+
+        return success(result, "daily schedule created")
 
     except Exception as e:
         print("[AI DAILY SCHEDULE ERROR]", str(e))
-        raise HTTPException(
-            status_code=500,
-            detail="Daily schedule failed"
-        )
+        return fail("daily schedule failed")
 
 
 # =====================================================
-# 🧠 ADAPTIVE LEARNING ENGINE (CORE V4)
+# 🧠 ADAPTIVE LEARNING ENGINE (CORE DIFFERENTIATOR)
 # =====================================================
+
 @router.post("/adaptive-learn")
-async def adaptive_learn(request: Request, user=Depends(verify_token)):
-
-    body = await get_body(request)
-
-    material_id = body.get("material_id")
-
-    if not material_id:
-        raise HTTPException(
-            status_code=400,
-            detail="material_id is required"
-        )
+async def adaptive_learn(req: MaterialRequest, user=Depends(verify_token)):
 
     try:
+        engine = getattr(ai_service, "adaptive_learning_engine", None)
 
-        # safety check: function must exist
-        if not hasattr(ai_service, "adaptive_learning_engine"):
-            raise HTTPException(
-                status_code=501,
-                detail="Adaptive learning engine not implemented"
-            )
+        if not engine:
+            return fail("adaptive learning engine not available", 501)
 
-        return await ai_service.adaptive_learning_engine(
-            material_id=material_id,
+        result = await engine(
+            material_id=req.material_id,
             user=user
         )
 
-    except HTTPException as e:
-        raise e
+        return success(result, "adaptive learning generated")
 
     except Exception as e:
-        print("[ADAPTIVE LEARN ERROR]", str(e))
-        raise HTTPException(
-            status_code=500,
-            detail="Adaptive learning failed"
-        )
+        print("[AI ADAPTIVE ERROR]", str(e))
+        return fail("adaptive learning failed")
